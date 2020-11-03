@@ -15,6 +15,7 @@
 		"Lens": "sg_lens_1",
 		"Camera Type": "sg_camera_type",
 		"Lens Type": "sg_lens_type",
+		"Height": "sg_height",
 		"Speed": "sg_speed",
 		"Tilt": "sg_tilt" 
 	},

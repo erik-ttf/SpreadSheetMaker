@@ -2,6 +2,8 @@
 import json
 from collections import OrderedDict
 import sys
+import re
+import xlsxwriter
 
 # TTF Modules
 import ttfcore.common.environ as env
@@ -11,11 +13,6 @@ from ttfcore.ui.base import BaseWidgetWindow, launch
 
 # TTF Site Packages
 from Qt import QtWidgets, QtGui, QtCore
-
-import xlsxwriter
-
-
-# TODO: Init the class storing the UI widgets and logic to pull playlists 
 
 
 class SpreadSheetData(BaseWidgetWindow):
@@ -69,10 +66,90 @@ class SpreadSheetData(BaseWidgetWindow):
     def collect_version_data(self, curr_playlist):
         version_data = list()
         for each_vers in curr_playlist.get('versions'):
+            version_fields = self._input_fields.get('Shotgun').values()
+            version_fields.append('sg_path_to_meta_data')
             sg_version = self._sg_call.find_one(
-                'Version', [['id', 'is', each_vers.get('id')]], self._input_fields.get('Shotgun').values())
+                'Version', [['id', 'is', each_vers.get('id')]], version_fields)
             version_data.append(sg_version)
         return version_data
+
+    def load_shot_metadata(self, vers_entity):
+        version_name = vers_entity['code']
+        comp_meta_path = vers_entity.get('sg_path_to_meta_data')
+        if not comp_meta_path:
+            print 'Warning: Failed to find sg_path_to_meta_data field for ' \
+                  'version: {}'.format(version_name)
+            return
+
+        with open(comp_meta_path, 'r') as f:
+            comp_json = json.load(f)
+            shot_meta_path = comp_json['comp']['data_paths'][0]
+
+        if not shot_meta_path:
+            print 'Warning: Failed to find shot metadata' \
+                  'for version: {}'.format(version_name)
+            return
+
+        shot_json = None
+        with open(shot_meta_path, 'r') as f:
+            shot_json = json.load(f)
+
+        if not shot_json:
+            print 'Warning: Failed to read shot metadata' \
+                  'for version: {}'.format(version_name)
+            return
+
+        return shot_json
+
+    def modify_values_on_request(self, header, data, vers_entity):
+        new_data = None
+
+        if 'edit' in vers_entity.get('code'):
+            camera_attrs = ['tilt', 'speed', 'height', 'camera type', 'lens type', 'lens']
+            if header.lower() in camera_attrs:
+                new_data = 'N/A'
+
+            if header.lower() in 'type':
+                new_data = data + ' - Edit'
+        else:
+            camera_attrs = ['tilt', 'speed', 'height']
+            if header.lower() in camera_attrs:
+                if data != '':
+                    if '->' in data:
+                        min_val, max_val = data.split('->')
+                        new_data = str(round(float(min_val.strip()), 2)) + ' -> ' + str(round(float(max_val.strip()), 2))
+                    else:
+                        new_data = str(round(float(data), 2))
+
+            if 'lens' == header.lower():
+                if data != '':
+                    lens_number = re.sub('[a-zA-Z]+', '', data)
+                    new_data = str(round(float(lens_number))) + 'mm'
+
+        if header in 'Shot Number':
+            new_data = re.sub('[0-9]+_', '', data, 1)
+
+        return new_data
+
+    def modify_height_attrs(self, vers_entity):
+        modified_height_values = list()
+
+        shot_data = self.load_shot_metadata(vers_entity)
+        # Gets the range min/max values for height, speed and tilt to round up to 2 decimals
+        height_min = str(round(shot_data['maya']['frame_data']['realHeight']['range']['min'], 2))
+        height_max = str(round(shot_data['maya']['frame_data']['realHeight']['range']['max'], 2))
+
+        real_height_frames = shot_data['maya']['frame_data']['realHeight']['values']
+        start_frame = str(sorted([int(f) for f in real_height_frames.keys()])[0])
+        modified_height_values.append(str(round(real_height_frames[start_frame], 2)))
+        end_frame = str(sorted([int(f) for f in real_height_frames.keys()])[-1])
+        modified_height_values.append(str(round(real_height_frames[end_frame], 2)))
+
+        # Sets Min and Max values of realHeight
+        modified_height_values.append(height_min)
+        modified_height_values.append(height_max)
+
+        return modified_height_values
 
     def submission_write(self):
         self.lbl_status_text.setText('')
@@ -95,139 +172,39 @@ class SpreadSheetData(BaseWidgetWindow):
             ws.write(0, col, head, bold_format)
 
         version_data = self.collect_version_data(curr_playlist)
-
+        col_values = self._input_fields.get('Shotgun').items()
         row = 1
-        for each_vers in range(len(version_data)):
-            for col, data in enumerate(self._input_fields.get('Shotgun').values()):
-                curr_data = version_data[each_vers].get(data, '')
+        col = 0
+        for index, each_vers in enumerate(version_data):
+            for (header, data) in col_values:
+                curr_data = version_data[index].get(data, '')
                 if isinstance(curr_data, dict):
                     curr_data = curr_data.get('name')
+                    print curr_data
+                if curr_data is None:
+                    curr_data = ''
+                modified_data = self.modify_values_on_request(header, curr_data, each_vers)
+                if modified_data:
+                    curr_data = modified_data
                 ws.write(row, col, curr_data)
+                col += 1
+            col = 0
+            row += 1
+
+        row = 1
+        col = len(col_values)
+        for index, each_vers in enumerate(version_data):
+            if 'External' in self._input_fields:
+                height_attrs = self.modify_height_attrs(each_vers)
+                for each_attr in height_attrs:
+                    ws.write(row, col, each_attr)
+                    col += 1
+            col = len(col_values)
             row += 1
 
         self.lbl_status_text.setText('Submission document saved!')
 
         wb.close()
-
-def update_submission_versions(shotgun):
-    """
-    Updates the submission columns for all versions in the project
-    by using the realHeight frame data from JSON metadata
-    :param shotgun: The ShotgunBase object to query Shotgun information
-    :return:
-    """
-    sg = shotgun.sg
-    sg_proj = shotgun.project
-
-    # Finds the shots on the current Shotgun project
-    shot_filters = [['project', 'is', sg_proj]]
-    shot_fields = ['id', 'code', 'tasks']
-
-    all_shots = sg.find('Shot', shot_filters, shot_fields)
-
-    # Filters shots under the Previs task
-    previs_shots = filter_shots_by_task(shots=all_shots, task_name='Previs')
-    if not previs_shots:
-        print 'Error: Issues to find previs shots in project: {}'.format(sg_proj.get('name'))
-        return
-
-    for each_shot in previs_shots:
-        print "\nSearching for versions in shot: {}...".format(each_shot.get('code'))
-        version_filters = [['project', 'is', sg_proj], ['entity', 'is', each_shot]]
-        version_fields = ['sg_path_to_meta_data', 'id', 'code', 'sg_external_update']
-
-        versions = sg.find('Version', version_filters, version_fields)
-
-        if not versions:
-            print 'Error: Issues to find versions for shot with code: {}' \
-                .format(each_shot.get('code'))
-            continue
-
-        new_versions = [v for v in versions if v.get('sg_external_update') is None \
-                            or v.get('sg_external_update') != 'Yes']
-        if not new_versions:
-            print 'Versions already updated for shot with code: {}' \
-                .format(each_shot.get('code'))
-            continue
-
-        for each_vers in new_versions:
-            version_name = each_vers['code']
-            comp_meta_path = each_vers.get('sg_path_to_meta_data')
-            if not comp_meta_path:
-                print 'Warning: Failed to find sg_path_to_meta_data field for ' \
-                      'version: {}'.format(version_name)
-                continue
-
-            with open(comp_meta_path, 'r') as f:
-                comp_json = json.load(f)
-                shot_meta_path = comp_json['comp']['data_paths'][0]
-
-            if not shot_meta_path:
-                print 'Warning: Failed to find shot metadata' \
-                      'for version: {}'.format(version_name)
-                continue
-
-            shot_json = None
-            with open(shot_meta_path, 'r') as f:
-                shot_json = json.load(f)
-
-            if not shot_json:
-                print 'Warning: Failed to read shot metadata' \
-                      'for version: {}'.format(version_name)
-                continue
-
-            print "Updating version: {}...".format(version_name)
-
-            # Creates a dict to store values for updating version fields in Shotgun
-            submission_fields = dict()
-
-            # Gets the range min/max values for height, speed and tilt to round up to 2 decimals
-            height_min = str(round(shot_json['maya']['frame_data']['realHeight']['range']['min'], 2))
-            height_max = str(round(shot_json['maya']['frame_data']['realHeight']['range']['max'], 2))
-
-            speed_min = str(round(shot_json['maya']['frame_data']['speed']['range']['min'], 2))
-            speed_max = str(round(shot_json['maya']['frame_data']['speed']['range']['max'], 2))
-
-            tilt_min = str(round(shot_json['maya']['frame_data']['realTilt']['range']['min'], 2))
-            tilt_max = str(round(shot_json['maya']['frame_data']['realTilt']['range']['max'], 2))
-
-            submission_fields['sg_height'] = '{min} -> {max}'.format(min=height_min, max=height_max)
-            submission_fields['sg_speed'] = '{min} -> {max}'.format(min=speed_min, max=speed_max)
-            submission_fields['sg_tilt'] = '{min} -> {max}'.format(min=tilt_min, max=tilt_max)
-
-            tilt_min = str(round(shot_json['maya']['frame_data']['realTilt']['range']['min'], 2))
-            tilt_max = str(round(shot_json['maya']['frame_data']['realTilt']['range']['max'], 2))
-
-            # Gets min/max for lens to append 'mm' unit to the values
-            lens_min = shot_json['maya']['frame_data']['Lens']['range']['min']
-            lens_max = shot_json['maya']['frame_data']['Lens']['range']['max']
-            if lens_min == lens_max:
-            	new_lens = str(lens_min) + 'mm'
-            else:
-        		new_lens = '{min}mm -> {max}mm'.format(min=lens_min, max=lens_max)
-
-            submission_fields['sg_lens_1'] = new_lens
-
-            # Gets all frame values for realHeight
-            real_height_frames = shot_json['maya']['frame_data']['realHeight']['values']
-
-            # Sets the first and start frame values for realHeight
-            start_frame = str(sorted([int(f) for f in real_height_frames.keys()])[0])
-            submission_fields['sg_height_frame_start'] = str(round(real_height_frames[start_frame], 2))
-            end_frame = str(sorted([int(f) for f in real_height_frames.keys()])[-1])
-            submission_fields['sg_height_end_frame'] = str(round(real_height_frames[end_frame], 2))
-
-            # Sets Min and Max values of realHeight
-            submission_fields['sg_height_true_min'] = height_min
-            submission_fields['sg_height_true_max'] = height_max 
-
-            # Sets the condition field to 'Yes' to skip already processed versions next time script is run  
-            submission_fields['sg_external_update'] = 'Yes'
-
-            # Updating height fields in Shotgun for current version
-            sg.update(entity_type='Version', entity_id=each_vers['id'], data=submission_fields)
-
-    print '\nFinished updating submission columns for versions in Shotgun project: {}'.format(sg_proj.get('name'))
 
 
 if __name__ == "__main__":
