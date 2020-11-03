@@ -1,0 +1,28 @@
+{
+	"Shotgun": {
+		"Vendor": "sg_vendor",
+		"Date Submitted": "sg_date_submitted",
+		"Submission ID": "sg_subject",
+		"Shot Number": "entity",
+		"File Name": "code",
+		"Start Frame": "sg_first_frame",
+		"End Frame": "sg_last_frame",
+		"Frame Duration": "frame_count",
+		"Format": "sg_file_type",
+		"Type": "sg_task",
+		"Submitted For": "sg_submitted_for",
+		"Submission Notes": "sg_submission_notes",
+		"Lens": "sg_lens_1",
+		"Camera Type": "sg_camera_type",
+		"Lens Type": "sg_lens_type",
+		"Speed": "sg_speed",
+		"Tilt": "sg_tilt" 
+	},
+
+	"External": {
+		"Height Frame Start": "Undefined",
+		"Height Frame End": "Undefined",
+		"Height True Min": "Undefined",
+		"Height True Max": "Undefined"
+	}
+}

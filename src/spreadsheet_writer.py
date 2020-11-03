@@ -1,25 +1,113 @@
+# Python Built-in
 import json
-import os
+from collections import OrderedDict
 import sys
 
+# TTF Modules
 import ttfcore.common.environ as env
 import ttfcore.shotgun.base as shotgun_base
-
 from shotgun_api.shotgun_api3.shotgun import Shotgun
+from ttfcore.ui.base import BaseWidgetWindow, launch
+
+# TTF Site Packages
+from Qt import QtWidgets, QtGui, QtCore
+
+import xlsxwriter
 
 
-def filter_shots_by_task(shots, task_name):
-    
-    previs_shots = list()
-    for each_shot in shots:
-        tasks = each_shot.get('tasks')
-        for each_task in tasks:
-            if task_name in each_task.get('name'):
-                previs_shots.append(each_shot)
-                break
+# TODO: Init the class storing the UI widgets and logic to pull playlists 
 
-    return previs_shots
 
+class SpreadSheetData(BaseWidgetWindow):
+    _obj_name = "SpreadsheetUI"
+    _window_title = "Submission Writer"
+
+    def __init__(self, input_data):
+        super(SpreadSheetData, self).__init__()
+        self._input_fields = self.read_input_data(input_data)
+        self._sg_base = self.connect_to_sg()
+        self._sg_proj = self._sg_base.project
+        self._sg_call = self._sg_base.sg
+
+        self._playlists = self.get_playlists()
+        if self._playlists:
+            self.combo_playlists.addItems([p.get('code') for p in self._playlists])
+            self.combo_playlists.setCurrentIndex(0)
+
+        self.connect_signals()
+
+    def connect_signals(self):
+        self.btn_write_submission.clicked.connect(self.submission_write)
+
+    def read_input_data(self, input_data):
+        with open(input_data) as open_file:
+            content = json.load(open_file, object_pairs_hook=OrderedDict)
+        return content
+
+    def connect_to_sg(self):
+        # Connects to shotgun via the ShotgunBase module
+        sg_base = shotgun_base.ShotgunBase()
+        if not sg_base:
+            print 'Error: Failed to connect to Shotgun server!'
+            return
+
+        print "Successfully connected to Shotgun TTF secure server!"
+        return sg_base
+
+    def get_playlists(self):
+        filters = [['project', 'is', self._sg_proj]]
+        fields = ['code', 'versions']
+        playlists = self._sg_call.find('Playlist', filters, fields)
+        return playlists
+
+    def get_current_playlist(self):
+        selected_playlist = self.combo_playlists.currentText()
+        for each_playlist in self._playlists:
+            if selected_playlist in each_playlist.get('code'):
+                return each_playlist
+
+    def collect_version_data(self, curr_playlist):
+        version_data = list()
+        for each_vers in curr_playlist.get('versions'):
+            sg_version = self._sg_call.find_one(
+                'Version', [['id', 'is', each_vers.get('id')]], self._input_fields.get('Shotgun').values())
+            version_data.append(sg_version)
+        return version_data
+
+    def submission_write(self):
+        self.lbl_status_text.setText('')
+
+        curr_playlist = self.get_current_playlist()
+        if not curr_playlist.get('versions'):
+            print 'No versions found for playlist: {}'.format(curr_playlist.get('code'))
+            return
+
+        # Opens a new workbook, adding a worksheet to write the data in
+        wb = xlsxwriter.Workbook('C:/Users/epetters/Documents/test.xlsx')
+        ws = wb.add_worksheet()
+
+        # Writes the headers in a bolded format
+        bold_format = wb.add_format({'bold': True})
+        headers = self._input_fields.get('Shotgun').keys()
+        if 'External' in self._input_fields:
+            headers.extend(self._input_fields.get('External').keys())
+        for col, head in enumerate(headers):
+            ws.write(0, col, head, bold_format)
+
+        version_data = self.collect_version_data(curr_playlist)
+
+        row = 1
+        for each_vers in range(len(version_data)):
+            for col, data in enumerate(self._input_fields.get('Shotgun').values()):
+                curr_data = version_data[each_vers].get(data, '')
+                if isinstance(curr_data, dict):
+                    curr_data = curr_data.get('name')
+                ws.write(row, col, curr_data)
+            row += 1
+
+        self.lbl_status_text.setText('Submission document saved!')
+
+        wb.close()
 
 def update_submission_versions(shotgun):
     """
@@ -143,12 +231,8 @@ def update_submission_versions(shotgun):
 
 
 if __name__ == "__main__":
-    # Connects to shotgun via the ShotgunBase module
-    sg_base = shotgun_base.ShotgunBase()
-    if not sg_base:
-        print 'Error: Failed to connect to Shotgun server...'
-        exit(0)
+    if len(sys.argv) < 2:
+        print 'No input data provided for submission writing!'
+        sys.exit(0)
 
-    # Calls to update version height columns in Shotgun
-    print "Successfully connected to Shotgun TTF secure server!"
-    update_submission_versions(shotgun=sg_base)
+    launch(SpreadSheetData, sys.argv[1])
