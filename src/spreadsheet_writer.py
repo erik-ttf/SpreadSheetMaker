@@ -52,9 +52,13 @@ class SpreadSheetData(BaseWidgetWindow):
         return sg_base
 
     def get_playlists(self):
-        filters = [['project', 'is', self._sg_proj]]
-        fields = ['code', 'versions']
-        playlists = self._sg_call.find('Playlist', filters, fields)
+        playlist_filters = [['project', 'is', self._sg_proj]]
+        playlist_fields = ['code', 'versions']
+        sort_behaviour = [{'column': 'sg_sort_order', 'direction': 'desc'}]
+        playlists = self._sg_call.find(entity_type='Playlist',
+                                       filters=playlist_filters,
+                                       fields=playlist_fields,
+                                       order=sort_behaviour)
         return playlists
 
     def get_current_playlist(self):
@@ -68,8 +72,9 @@ class SpreadSheetData(BaseWidgetWindow):
         for each_vers in curr_playlist.get('versions'):
             version_fields = self._input_fields.get('Shotgun').values()
             version_fields.append('sg_path_to_meta_data')
-            sg_version = self._sg_call.find_one(
-                'Version', [['id', 'is', each_vers.get('id')]], version_fields)
+            sg_version = self._sg_call.find_one(entity_type='Version',
+                                                filters=[['id', 'is', each_vers.get('id')]],
+                                                fields=version_fields)
             version_data.append(sg_version)
         return version_data
 
@@ -139,6 +144,9 @@ class SpreadSheetData(BaseWidgetWindow):
         modified_height_values = list()
 
         shot_data = self.load_shot_metadata(vers_entity)
+        if not shot_data:
+            print 'Found no shot data for version: {}'.format(vers_entity.get('code'))
+            return
         # Gets the range min/max values for height, speed and tilt to round up to 2 decimals
         height_min = str(round(shot_data['maya']['frame_data']['realHeight']['range']['min'], 2))
         height_max = str(round(shot_data['maya']['frame_data']['realHeight']['range']['max'], 2))
@@ -161,6 +169,7 @@ class SpreadSheetData(BaseWidgetWindow):
         curr_playlist = self.get_current_playlist()
         if not curr_playlist.get('versions'):
             print 'No versions found for playlist: {}'.format(curr_playlist.get('code'))
+            self.lbl_status_text.setText('No versions in the current playlist!')
             return
 
         # Opens a new workbook, adding a worksheet to write the data in
@@ -199,6 +208,8 @@ class SpreadSheetData(BaseWidgetWindow):
         for index, each_vers in enumerate(version_data):
             if 'External' in self._input_fields:
                 height_attrs = self.modify_height_attrs(each_vers)
+                if not height_attrs:
+                    continue
                 for each_attr in height_attrs:
                     ws.write(row, col, each_attr)
                     col += 1
