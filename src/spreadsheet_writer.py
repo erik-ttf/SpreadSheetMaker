@@ -90,7 +90,6 @@ class SpreadSheetData(BaseWidgetWindow):
                   'for version: {}'.format(version_name)
             return
 
-        shot_json = None
         with open(shot_meta_path, 'r') as f:
             shot_json = json.load(f)
 
@@ -104,6 +103,8 @@ class SpreadSheetData(BaseWidgetWindow):
     def modify_values_on_request(self, header, data, vers_entity):
         new_data = None
 
+        # TODO: Edit Submission Notes and add from comp metadata?
+
         if 'edit' in vers_entity.get('code'):
             camera_attrs = ['tilt', 'speed', 'height', 'camera type', 'lens type', 'lens']
             if header.lower() in camera_attrs:
@@ -111,6 +112,9 @@ class SpreadSheetData(BaseWidgetWindow):
 
             if header.lower() in 'type':
                 new_data = data + ' - Edit'
+
+            if header.lower() in 'submitted for':
+                new_data = 'Edit for review'
         else:
             camera_attrs = ['tilt', 'speed', 'height']
             if header.lower() in camera_attrs:
@@ -180,7 +184,6 @@ class SpreadSheetData(BaseWidgetWindow):
                 curr_data = version_data[index].get(data, '')
                 if isinstance(curr_data, dict):
                     curr_data = curr_data.get('name')
-                    print curr_data
                 if curr_data is None:
                     curr_data = ''
                 modified_data = self.modify_values_on_request(header, curr_data, each_vers)
