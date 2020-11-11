@@ -4,6 +4,7 @@ from collections import OrderedDict
 import sys
 import re
 import xlsxwriter
+import os
 
 # TTF Modules
 import ttfcore.common.environ as env
@@ -14,6 +15,9 @@ from ttfcore.ui.base import BaseWidgetWindow, launch
 # TTF Site Packages
 from Qt import QtWidgets, QtGui, QtCore
 
+JSON_PATH = "S:\\Pilgrim\\custom\\src\\core\\python\\spreadsheet_writer\\column_fields_to_parse.json"
+SUBMISSION_DIR = "S:\\Pilgrim\\custom\\src\\core\\python\\spreadsheet_writer\\submission_docs"
+
 
 class SpreadSheetData(BaseWidgetWindow):
     _obj_name = "SpreadsheetUI"
@@ -22,7 +26,7 @@ class SpreadSheetData(BaseWidgetWindow):
     def __init__(self, input_data):
         super(SpreadSheetData, self).__init__()
         if len(input_data) <= 1:
-            file_to_read = "Y:\\erikp\\SpreadSheetMaker\\src\\column_fields_to_parse.json"
+            file_to_read = JSON_PATH
         else:
             file_to_read = input_data[1]
         self._input_fields = self.read_input_data(file_to_read)
@@ -171,14 +175,16 @@ class SpreadSheetData(BaseWidgetWindow):
         self.lbl_status_text.setText('')
 
         curr_playlist = self.get_current_playlist()
+        playlist_name = curr_playlist.get('code')
         if not curr_playlist.get('versions'):
-            print 'No versions found for playlist: {}'.format(curr_playlist.get('code'))
+            print 'No versions found for playlist: {}'.format(playlist_name)
             self.lbl_status_text.setText('No versions in the current playlist!')
             return
 
         try:
+            submission_output_path = os.path.join(SUBMISSION_DIR, playlist_name + '.xlsx')
             # Opens a new workbook, adding a worksheet to write the data in
-            wb = xlsxwriter.Workbook('C:/Users/epetters/Documents/test.xlsx')
+            wb = xlsxwriter.Workbook(submission_output_path)
             ws = wb.add_worksheet()
 
             # Writes the headers in a bolded format
@@ -228,7 +234,6 @@ class SpreadSheetData(BaseWidgetWindow):
         except IOError as error:
             print error
             self.lbl_status_text.setText('Existing document open. Please close and try again!')
-
 
 
 if __name__ == "__main__":
