@@ -21,7 +21,11 @@ class SpreadSheetData(BaseWidgetWindow):
 
     def __init__(self, input_data):
         super(SpreadSheetData, self).__init__()
-        self._input_fields = self.read_input_data(input_data)
+        if len(input_data) <= 1:
+            file_to_read = "Y:\\erikp\\SpreadSheetMaker\\src\\column_fields_to_parse.json"
+        else:
+            file_to_read = input_data[1]
+        self._input_fields = self.read_input_data(file_to_read)
         self._sg_base = self.connect_to_sg()
         self._sg_proj = self._sg_base.project
         self._sg_call = self._sg_base.sg
@@ -172,58 +176,60 @@ class SpreadSheetData(BaseWidgetWindow):
             self.lbl_status_text.setText('No versions in the current playlist!')
             return
 
-        # Opens a new workbook, adding a worksheet to write the data in
-        wb = xlsxwriter.Workbook('C:/Users/epetters/Documents/test.xlsx')
-        ws = wb.add_worksheet()
+        try:
+            # Opens a new workbook, adding a worksheet to write the data in
+            wb = xlsxwriter.Workbook('C:/Users/epetters/Documents/test.xlsx')
+            ws = wb.add_worksheet()
 
-        # Writes the headers in a bolded format
-        bold_format = wb.add_format({'bold': True})
-        headers = self._input_fields.get('Shotgun').keys()
-        if 'External' in self._input_fields:
-            headers.extend(self._input_fields.get('External').keys())
-        for col, head in enumerate(headers):
-            ws.write(0, col, head, bold_format)
-
-        version_data = self.collect_version_data(curr_playlist)
-        col_values = self._input_fields.get('Shotgun').items()
-        row = 1
-        col = 0
-        for index, each_vers in enumerate(version_data):
-            for (header, data) in col_values:
-                curr_data = version_data[index].get(data, '')
-                if isinstance(curr_data, dict):
-                    curr_data = curr_data.get('name')
-                if curr_data is None:
-                    curr_data = ''
-                modified_data = self.modify_values_on_request(header, curr_data, each_vers)
-                if modified_data:
-                    curr_data = modified_data
-                ws.write(row, col, curr_data)
-                col += 1
-            col = 0
-            row += 1
-
-        row = 1
-        col = len(col_values)
-        for index, each_vers in enumerate(version_data):
+            # Writes the headers in a bolded format
+            bold_format = wb.add_format({'bold': True})
+            headers = self._input_fields.get('Shotgun').keys()
             if 'External' in self._input_fields:
-                height_attrs = self.modify_height_attrs(each_vers)
-                if not height_attrs:
-                    continue
-                for each_attr in height_attrs:
-                    ws.write(row, col, each_attr)
+                headers.extend(self._input_fields.get('External').keys())
+            for col, head in enumerate(headers):
+                ws.write(0, col, head, bold_format)
+
+            version_data = self.collect_version_data(curr_playlist)
+            col_values = self._input_fields.get('Shotgun').items()
+            row = 1
+            col = 0
+            for index, each_vers in enumerate(version_data):
+                for (header, data) in col_values:
+                    curr_data = version_data[index].get(data, '')
+                    if isinstance(curr_data, dict):
+                        curr_data = curr_data.get('name')
+                    if curr_data is None:
+                        curr_data = ''
+                    modified_data = self.modify_values_on_request(header, curr_data, each_vers)
+                    if modified_data:
+                        curr_data = modified_data
+                    ws.write(row, col, curr_data)
                     col += 1
+                col = 0
+                row += 1
+
+            row = 1
             col = len(col_values)
-            row += 1
+            for index, each_vers in enumerate(version_data):
+                if 'External' in self._input_fields:
+                    height_attrs = self.modify_height_attrs(each_vers)
+                    if not height_attrs:
+                        continue
+                    for each_attr in height_attrs:
+                        ws.write(row, col, each_attr)
+                        col += 1
+                col = len(col_values)
+                row += 1
 
-        self.lbl_status_text.setText('Submission document saved!')
+            self.lbl_status_text.setText('Submission document saved!')
 
-        wb.close()
+            wb.close()
+
+        except IOError as error:
+            print error
+            self.lbl_status_text.setText('Existing document open. Please close and try again!')
+
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print 'No input data provided for submission writing!'
-        sys.exit(0)
-
-    launch(SpreadSheetData, sys.argv[1])
+    launch(SpreadSheetData, sys.argv)
