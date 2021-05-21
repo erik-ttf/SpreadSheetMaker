@@ -15,21 +15,28 @@ from ttfcore.ui.base import BaseWidgetWindow, launch
 # TTF Site Packages
 from Qt import QtWidgets, QtGui, QtCore
 
-JSON_PATH = "S:\\Pilgrim\\custom\\src\\core\\python\\spreadsheet_writer\\column_fields_to_parse.json"
-SUBMISSION_DIR = "S:\\Pilgrim\\custom\\src\\core\\python\\spreadsheet_writer\\submission_docs"
+JSON_PARSER_PATH = "custom/src/core/python/spreadsheet_writer/column_fields_to_parse.json"
+SUBMISSION_DIR = "delivery/siteTransfers/outgoing"
 
 
 class SpreadSheetData(BaseWidgetWindow):
     _obj_name = "SpreadsheetUI"
     _window_title = "Submission Writer"
 
-    def __init__(self, input_data):
+    def __init__(self):
         super(SpreadSheetData, self).__init__()
-        if len(input_data) <= 1:
-            file_to_read = JSON_PATH
-        else:
-            file_to_read = input_data[1]
-        self._input_fields = self.read_input_data(file_to_read)
+        self.show_env = env.ShowEnv()
+        self.show_cfg = self.show_env.show_cfg
+        self.show_drive = self.show_cfg.get('showDrive')
+
+        self._column_field_parser_path = os.path.normpath(
+            os.path.join(self.show_drive, JSON_PARSER_PATH))
+
+        self._submission_dir_path = os.path.normpath(
+            os.path.join(self.show_drive, SUBMISSION_DIR))
+
+        self._input_fields = self.read_input_data(self._column_field_parser_path)
+
         self._sg_base = self.connect_to_sg()
         self._sg_proj = self._sg_base.project
         self._sg_call = self._sg_base.sg
@@ -182,7 +189,7 @@ class SpreadSheetData(BaseWidgetWindow):
             return
 
         try:
-            submission_output_path = os.path.join(SUBMISSION_DIR, playlist_name + '.xlsx')
+            submission_output_path = os.path.join(self._submission_dir_path, playlist_name + '.xlsx')
             # Opens a new workbook, adding a worksheet to write the data in
             wb = xlsxwriter.Workbook(submission_output_path)
             ws = wb.add_worksheet()
@@ -237,4 +244,4 @@ class SpreadSheetData(BaseWidgetWindow):
 
 
 if __name__ == "__main__":
-    launch(SpreadSheetData, sys.argv)
+    launch(SpreadSheetData)
